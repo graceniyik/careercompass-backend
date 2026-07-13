@@ -1,0 +1,305 @@
+// CareerCompass AI — Prisma Schema
+// Phase 3: Database Design
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// ENUMS
+// ---------------------------------------------------------------------------
+
+enum Role {
+  STUDENT
+  COUNSELOR
+  ADMIN
+}
+
+enum RiasecDimension {
+  REALISTIC
+  INVESTIGATIVE
+  ARTISTIC
+  SOCIAL
+  ENTERPRISING
+  CONVENTIONAL
+}
+
+enum QuestionType {
+  LIKERT
+  QUALITATIVE
+}
+
+enum RecommendationStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+enum ReviewStatusFlag {
+  AGREES
+  HAS_CONCERNS
+  SUGGESTS_ALTERNATIVE
+}
+
+// ---------------------------------------------------------------------------
+// AUTH & USERS
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  role         Role
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  studentProfile     StudentProfile?
+  assessments        Assessment[]      @relation("StudentAssessments")
+  counselorReviews   CounselorReview[] @relation("CounselorReviews")
+  bookmarks          Bookmark[]
+  authEvents         AuthEvent[]
+
+  @@index([role])
+}
+
+model AuthEvent {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  eventType String
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model StudentProfile {
+  id             String   @id @default(uuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id])
+  fullName       String
+  institution    String
+  yearOfStudy    String?
+  fieldOfStudy   String?
+  hobbies        String?  @db.Text
+  careerGoals    String?  @db.Text
+  strengths      String?  @db.Text
+  updatedAt      DateTime @updatedAt
+
+  skills StudentSkill[]
+}
+
+// ---------------------------------------------------------------------------
+// SKILLS (controlled taxonomy)
+// ---------------------------------------------------------------------------
+
+model Skill {
+  id       String  @id @default(uuid())
+  name     String  @unique
+  isActive Boolean @default(true)
+
+  studentSkills StudentSkill[]
+  careerSkills  CareerSkill[]
+}
+
+model StudentSkill {
+  studentProfileId String
+  studentProfile   StudentProfile @relation(fields: [studentProfileId], references: [id])
+  skillId          String
+  skill            Skill          @relation(fields: [skillId], references: [id])
+
+  @@id([studentProfileId, skillId])
+}
+
+model CareerSkill {
+  careerId String
+  career   Career @relation(fields: [careerId], references: [id])
+  skillId  String
+  skill    Skill  @relation(fields: [skillId], references: [id])
+
+  @@id([careerId, skillId])
+}
+
+// ---------------------------------------------------------------------------
+// ASSESSMENT
+// ---------------------------------------------------------------------------
+
+model AssessmentQuestion {
+  id              String           @id @default(uuid())
+  type            QuestionType
+  text            String           @db.Text
+  riasecDimension RiasecDimension?
+  isActive        Boolean          @default(true)
+  order           Int
+  createdAt       DateTime         @default(now())
+
+  answers AssessmentAnswer[]
+}
+
+model Assessment {
+  id              String   @id @default(uuid())
+  studentId       String
+  student         User     @relation("StudentAssessments", fields: [studentId], references: [id])
+
+  profileSnapshot Json
+  riasecScores    Json
+
+  submittedAt     DateTime @default(now())
+
+  answers         AssessmentAnswer[]
+  recommendations Recommendation[]
+
+  @@index([studentId])
+}
+
+model AssessmentAnswer {
+  id           String              @id @default(uuid())
+  assessmentId String
+  assessment   Assessment          @relation(fields: [assessmentId], references: [id])
+  questionId   String
+  question     AssessmentQuestion  @relation(fields: [questionId], references: [id])
+
+  likertValue  Int?
+  textAnswer   String?  @db.Text
+
+  @@index([assessmentId])
+}
+
+// ---------------------------------------------------------------------------
+// CAREERS
+// ---------------------------------------------------------------------------
+
+model Career {
+  id           String   @id @default(uuid())
+  title        String
+  description  String   @db.Text
+  riasecCode   Json
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  requiredSkills   CareerSkill[]
+  certifications   Certification[]
+  degreePrograms   DegreeProgram[]
+  roadmapSteps     RoadmapStep[]
+  recommendations  Recommendation[]
+  bookmarks        Bookmark[]
+
+  @@index([isActive])
+}
+
+model Certification {
+  id       String @id @default(uuid())
+  careerId String
+  career   Career @relation(fields: [careerId], references: [id])
+  name     String
+  provider String?
+  url      String?
+}
+
+model DegreeProgram {
+  id       String @id @default(uuid())
+  careerId String
+  career   Career @relation(fields: [careerId], references: [id])
+  name     String
+  level    String?
+}
+
+model RoadmapStep {
+  id          String @id @default(uuid())
+  careerId    String
+  career      Career @relation(fields: [careerId], references: [id])
+  order       Int
+  title       String
+  description String @db.Text
+}
+
+model Bookmark {
+  id        String   @id @default(uuid())
+  studentId String
+  student   User     @relation(fields: [studentId], references: [id])
+  careerId  String
+  career    Career   @relation(fields: [careerId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@unique([studentId, careerId])
+}
+
+// ---------------------------------------------------------------------------
+// RECOMMENDATIONS & AI
+// ---------------------------------------------------------------------------
+
+model Recommendation {
+  id           String               @id @default(uuid())
+  assessmentId String
+  assessment   Assessment           @relation(fields: [assessmentId], references: [id])
+  careerId     String
+  career       Career               @relation(fields: [careerId], references: [id])
+
+  matchScore   Float
+
+  status         RecommendationStatus @default(PENDING)
+  aiExplanation  String?              @db.Text
+  aiRoadmapText  String?              @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  aiCallLogs       AiCallLog[]
+  counselorReviews CounselorReview[]
+
+  @@index([assessmentId])
+  @@index([careerId])
+}
+
+model AiCallLog {
+  id               String   @id @default(uuid())
+  recommendationId String
+  recommendation   Recommendation @relation(fields: [recommendationId], references: [id])
+
+  promptTemplateId String
+  modelVersion     String
+  inputs           Json
+  rawOutput        String?  @db.Text
+  cacheKey         String
+  cacheHit         Boolean  @default(false)
+  succeeded        Boolean
+  errorMessage     String?  @db.Text
+
+  createdAt DateTime @default(now())
+
+  @@index([recommendationId])
+  @@index([cacheKey])
+}
+
+model CounselorReview {
+  id               String            @id @default(uuid())
+  recommendationId String
+  recommendation   Recommendation    @relation(fields: [recommendationId], references: [id])
+  counselorId      String
+  counselor        User              @relation("CounselorReviews", fields: [counselorId], references: [id])
+
+  statusFlag ReviewStatusFlag
+  comment    String           @db.Text
+
+  createdAt DateTime @default(now())
+
+  @@index([recommendationId])
+}
+
+// ---------------------------------------------------------------------------
+// ADMIN / SYSTEM SETTINGS
+// ---------------------------------------------------------------------------
+
+model SystemSetting {
+  key         String @id
+  value       String
+  description String?
+  updatedAt   DateTime @updatedAt
+}
