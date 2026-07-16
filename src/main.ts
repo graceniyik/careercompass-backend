@@ -6,22 +6,24 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // Global validation: every incoming request is checked against its DTO
   app.useGlobalPipes(
     new ValidationPipe({
-      whitelist: true, // strips unknown fields not in the DTO
-      forbidNonWhitelisted: true, // rejects requests with extra unknown fields
-      transform: true, // auto-converts payloads into DTO class instances
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
     }),
   );
 
-  // Allow the frontend to call this API later (adjust origin when frontend exists)
+  const allowedOrigins = [
+    'http://localhost:5173',
+    'https://careercompass-frontend-seven.vercel.app',
+  ];
+
   app.enableCors({
-    origin: true, // during development; we'll restrict this in Phase 8
+    origin: allowedOrigins,
     credentials: true,
   });
 
-  // Swagger setup — auto-generated API docs
   const config = new DocumentBuilder()
     .setTitle('CareerCompass AI API')
     .setDescription('API documentation for the CareerCompass AI backend')
